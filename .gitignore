@@ -1,2 +1,4 @@
-*.venv*
 *.env*
+.venv*
+airflow/logs/*
+airflow/plugins/*
