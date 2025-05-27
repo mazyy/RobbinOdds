@@ -2,3 +2,6 @@
 .venv*
 airflow/logs/*
 airflow/plugins/*
+.vscode*
+*.pyc
+*pycache*
