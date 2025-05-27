@@ -1,7 +1,7 @@
 *.env*
 .venv*
-airflow/logs/*
-airflow/plugins/*
+airflow/logs/
+airflow/plugins/
 .vscode*
 *.pyc
 *pycache*
