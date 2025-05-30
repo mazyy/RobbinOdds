@@ -35,7 +35,8 @@ EVENT_HEADERS_KEYS_DICT = {
     "default_bet_id" : "defaultBetId",
     "user_bett_id" : "userBettId",
     "user_id" : "userId",
-    "default_scope_id" : "defaultScopeId"
+    "default_scope_id" : "defaultScopeId",
+    "version_id" : "versionId"
 }
 
 #new key and old key event body

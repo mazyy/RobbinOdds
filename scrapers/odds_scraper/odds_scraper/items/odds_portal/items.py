@@ -61,6 +61,7 @@ class EventHeaderItem(Item):
     user_bett_id = Field()
     user_id = Field()
     default_scope_id = Field()
+    version_id = Field()
 
 class EventBodyItem(Item):
     start_date = Field()

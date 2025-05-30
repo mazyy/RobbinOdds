@@ -5,3 +5,4 @@ airflow/plugins/
 .vscode*
 *.pyc
 *pycache*
+odds_data.json
