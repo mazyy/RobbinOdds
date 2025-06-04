@@ -1,0 +1,177 @@
+# OddsPortal Match Event Data Schema
+
+## Top-Level Structure
+
+```json
+{
+  "s": number,            // Status code (1 = success)
+  "d": {                  // Main data object
+    "bt": number,         // Betting type ID (e.g., 1 = 1X2)
+    "sc": number,         // Scope ID (e.g., 2 = Full Time)
+    "nav": object,        // Navigation structure with available bookmakers
+    "oddsdata": {         // Contains all odds information
+      "back": object,     // Back (normal) betting odds
+      "lay": object,      // Lay betting odds (betting exchanges)
+      "history": object   // Historical odds data
+    },
+    "time-base": number,           // Timestamp (base time for calculations)
+    "brokenParser": array,         // List of bookmakers with broken parsers
+    "encodeventId": string,        // Encoded event ID
+    "live-stream": object,         // Information about live streaming availability
+    "refresh": number              // Refresh interval in seconds
+  }
+}
+```
+
+## Navigation Object (`nav`)
+
+Hierarchical structure showing available bet types, scopes, and bookmakers:
+
+```json
+"nav": {
+  "[betTypeId]": {                  // Bet type ID (e.g., "1" for 1X2)
+    "[scopeId]": array of strings   // Array of bookmaker IDs for this bet type and scope
+  }
+}
+```
+
+## Odds Data Structure (`oddsdata`)
+
+### Back/Lay Odds Format
+
+Both `back` and `lay` objects follow this pattern:
+
+```json
+"[direction]": {                           // "back" or "lay"
+  "E-[bt]-[sc]-[ht]-[hv]-[mp]": {          // Odds identifier combining multiple parameters
+    "bettingTypeId": number,               // Betting type ID (e.g., 1 for 1X2)
+    "scopeId": number,                     // Scope ID (e.g., 2 for Full Time)
+    "handicapTypeId": number,              // Handicap type ID
+    "handicapValue": number,               // Handicap value
+    "mixedParameterId": number,            // Mixed parameter ID
+    "mixedParameterName": string|null,     // Mixed parameter name
+    "isBack": boolean,                     // Whether these are back odds (true) or lay odds (false)
+    "outcomeId": {                         // Maps outcome positions to IDs
+      "0": string,                         // Home team
+      "1": string,                         // Draw
+      "2": string                          // Away team
+    },
+    "odds": {                              // Current odds by bookmaker
+      "[bookmaker_id]": {                  // Bookmaker ID
+        "0": number,                       // Home odds
+        "1": number,                       // Draw odds
+        "2": number                        // Away odds
+      }
+    },
+    "movement": {                          // Odds movement direction
+      "[bookmaker_id]": {
+        "0": string,                       // "up", "down", or "" (no change)
+        "1": string,
+        "2": string
+      }
+    },
+    "openingOdd": {                        // Opening odds values
+      "[bookmaker_id]": {
+        "0": number,
+        "1": number,
+        "2": number
+      }
+    },
+    "openingChangeTime": {                 // Timestamps for opening odds
+      "[bookmaker_id]": {
+        "0": number,                       // UNIX timestamp
+        "1": number,
+        "2": number
+      }
+    },
+    "openingVolume": {                     // Opening volumes (for exchanges)
+      "[bookmaker_id]": {
+        "0": number,
+        "1": number,
+        "2": number
+      }
+    },
+    "volume": {                            // Current volumes (for exchanges)
+      "[bookmaker_id]": {
+        "0": number,
+        "1": number,
+        "2": number
+      }
+    },
+    "changeTime": {                        // Timestamps for last odds change
+      "[bookmaker_id]": {
+        "0": number,                       // UNIX timestamp
+        "1": number,
+        "2": number
+      }
+    },
+    "history": {                           // Historical odds grouped by outcome
+      "[outcome_id]": {                    // Outcome ID
+        "[bookmaker_id]": array            // Array of historical values
+      }
+    },
+    "st": {                                // Status information
+      "[bookmaker_id]": array              // Status array [status_code, status_value]
+    },
+    "bs": array,                           // Best scores (not used in this example)
+    "act": {                               // Active bookmakers
+      "[bookmaker_id]": boolean            // Whether bookmaker is active
+    },
+    "actEx": {                             // Active exchange status
+      "[bookmaker_id]": {
+        "0": boolean,                      // Active status per outcome
+        "1": boolean,
+        "2": boolean
+      }
+    }
+  }
+}
+```
+
+### Historical Odds Format (`history`)
+
+```json
+"history": {
+  "back": {                            // Back betting history
+    "[outcome_id]": {                  // Outcome ID (e.g., "6e0lqxv464x0xh8pg8")
+      "[bookmaker_id]": array          // Array of [odds, volume, timestamp] entries
+    }
+  },
+  "lay": {                             // Lay betting history
+    "[outcome_id]": {                  // Outcome ID
+      "[bookmaker_id]": array          // Array of [odds, volume, timestamp] entries  
+    }
+  }
+}
+```
+
+## Key IDs and Their Meanings
+
+### Betting Types (`bt`)
+- `1`: 1X2 (Home/Draw/Away)
+- `2`: Home/Away (no draw)
+- `3`: Asian Handicap
+- `4`: Over/Under
+- `5`: Both Teams to Score
+- And others like `6`, `8`, `9`, `10`, `12`, `13` (various betting markets)
+
+### Scopes (`sc`)
+- `2`: Full Time
+- `3`: First Half
+- `4`: Second Half
+
+### Outcome Positions
+- `0`: Home team (or first option)
+- `1`: Draw (or second option)
+- `2`: Away team (or third option)
+
+### Bookmaker IDs
+Various numeric IDs representing different bookmakers, e.g.:
+- `5`, `16`, `417`, `500`, `3`, `429`, `27`, etc.
+
+## Common Data Patterns
+
+1. **Odds format**: Decimal odds (e.g., 1.22, 7.5, 15)
+2. **Timestamps**: UNIX timestamps (seconds since epoch)
+3. **Movement**: Direction indicators ("up", "down", or empty string)
+4. **IDs**: Mixture of numeric IDs and encoded strings
