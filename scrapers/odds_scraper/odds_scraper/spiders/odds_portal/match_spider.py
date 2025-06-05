@@ -1,7 +1,6 @@
 # odds_scraper/odds_scraper/spiders/odds_portal/match_spider.py
 from .base_spider import BaseSpider
-from odds_scraper.items.odds_portal.items import MatchItem, OddsItem, \
-    HeaderLoader, BodyLoader, PageVarLoader
+from odds_scraper.items.odds_portal.items import HeaderLoader, BodyLoader, PageVarLoader
 from .parser import MATCH_EVENT_REACT_HEADER_COMPONENT_XPATH, PAGE_VAR_XPATH, PAGE_VAR_KEYS_DICT,\
     EVENT_HEADERS_KEYS_DICT, EVENT_BODY_KEYS_DICT, load_json_str, add_json_value_to_itemloader, \
     extract_pagevar_data, decrypt_data_PBKDF2HMAC
@@ -34,6 +33,7 @@ class MatchSpider(BaseSpider):
         
         self.match_url = match_url
         self.start_urls = [match_url]
+        self.domain_name = "https://www.oddsportal.com"
         
         # Parse betting types and scopes from command line
         self.selected_bet_types = bet_types.split(',') if bet_types else None
@@ -55,14 +55,6 @@ class MatchSpider(BaseSpider):
             'Accept': 'application/json, text/plain, */*',
             'Referer': self.match_url,
             'X-Requested-With': 'XMLHttpRequest'
-        }
-        
-        # Store collected data
-        self.collected_data = {
-            'event_header': None,
-            'event_body': None,
-            'page_var': None,
-            'odds_data': {}
         }
 
     def parse_items(self, response):
@@ -93,10 +85,6 @@ class MatchSpider(BaseSpider):
 
         event_header_item = header_loader.load_item()
         event_body_item = body_loader.load_item()
-        
-        # Store for later use
-        self.collected_data['event_header'] = dict(event_header_item)
-        self.collected_data['event_body'] = dict(event_body_item)
 
         # Yield header and body items
         yield event_header_item
@@ -115,19 +103,15 @@ class MatchSpider(BaseSpider):
         page_var_loader = add_json_value_to_itemloader(page_var_loader, page_var_json, keymaps=PAGE_VAR_KEYS_DICT)
         
         page_var_item = page_var_loader.load_item()
-        self.collected_data['page_var'] = dict(page_var_item)
         
         yield page_var_item
 
-        # --- Generate odds requests ---
-        # IMPORTANT: We need to yield from the generator
+        # --- Generate odds requests --
         for request in self.generate_odds_requests(event_header_item, page_var_item):
             yield request
 
     def generate_odds_requests(self, event_header: Dict, page_var: Dict):
         """Generate requests for odds endpoints based on selected bet types and scopes"""
-        domain_name = "https://www.oddsportal.com"
-        
         # Extract necessary data
         version_id = str(event_header.get('version_id', '1'))  # From header if available, else default to 1
         sport_id = str(event_header.get('sport_id', ''))
@@ -152,51 +136,35 @@ class MatchSpider(BaseSpider):
         
         self.logger.info(f"Available bet types: {list(nav_filtered.keys())}")
         
-        # Priority order for bet types (if no specific selection)
-        priority_bet_types = ['1', '2', '5', '4', '13', '3', '6', '12', '7', '8', '9', '10']
-        
         request_count = 0
-        
+
         for bet_type_key, bet_type_scopes in nav_filtered.items():
-            # Skip if not in selected types (if provided)
-            if self.selected_bet_types and bet_type_key not in self.selected_bet_types:
-                continue
-            
-            # Skip non-priority types if no specific selection and we already have enough requests
-            if not self.selected_bet_types and bet_type_key not in priority_bet_types[:5] and request_count > 10:
-                self.logger.info(f"Skipping non-priority bet type: {bet_type_key}")
-                continue
-            
+
             if isinstance(bet_type_scopes, dict):
                 for scope_key, scope_value in bet_type_scopes.items():
-                    # Skip if not in selected scopes (if provided)
-                    if self.selected_scopes and scope_key not in self.selected_scopes:
-                        continue
-                    
                     # Construct endpoint
                     # Pattern: /match-event/{version}-{sportId}-{eventId}-{betTypeId}-{scopeId}-{xhash}.dat
-                    endpoint = f"{domain_name}/match-event/{version_id}-{sport_id}-{event_id}-{bet_type_key}-{scope_key}-{xhash}.dat"
-                    
-                    # Add query parameters
-                    endpoint += "?_="  # Empty timestamp parameter as seen in the requests
-                    
-                    self.logger.info(f"Requesting odds for bet_type={bet_type_key}, scope={scope_key}: {endpoint}")
-                    
-                    yield scrapy.Request(
-                        url=endpoint,
-                        headers=self.endpoint_headers,
-                        callback=self.parse_odds,
-                        errback=self.handle_odds_error,
-                        meta={
-                            'bet_type': bet_type_key,
-                            'scope': scope_key,
-                            'endpoint': endpoint,
-                        },
-                        dont_filter=True,
-                        priority=10 if bet_type_key in priority_bet_types[:3] else 5
-                    )
-                    
-                    request_count += 1
+                    if scope_key in self.selected_scopes and bet_type_key in self.selected_bet_types:
+                        endpoint = f"{self.domain_name}/match-event/{version_id}-{sport_id}-{event_id}-{bet_type_key}-{scope_key}-{xhash}.dat"
+                        
+                        # Add query parameters
+                        endpoint += "?_="  # Empty timestamp parameter as seen in the requests
+                        
+                        self.logger.info(f"Requesting odds for bet_type={bet_type_key}, scope={scope_key}: {endpoint}")
+                        
+                        yield scrapy.Request(
+                            url=endpoint,
+                            headers=self.endpoint_headers,
+                            callback=self.parse_odds,
+                            errback=self.handle_odds_error,
+                            meta={
+                                'bet_type': bet_type_key,
+                                'scope': scope_key,
+                                'endpoint': endpoint,
+                            }
+                        )
+                        
+                        request_count += 1
 
     def parse_odds(self, response):
         """Parse the odds data from the endpoint"""
@@ -228,41 +196,8 @@ class MatchSpider(BaseSpider):
             
             self.logger.info(f"Successfully decrypted odds data for bet_type={bet_type}, scope={scope}")
             
-            # Store the decrypted data
-            odds_key = f"{bet_type}_{scope}"
-            self.collected_data['odds_data'][odds_key] = {
-                'bet_type': bet_type,
-                'scope': scope,
-                'data': decrypted_data,
-                'endpoint': meta.get('endpoint')
-            }
-            
-            # Log some details about the data structure
-            if isinstance(decrypted_data, dict):
-                self.logger.info(f"Decrypted data keys: {list(decrypted_data.keys())[:10]}")  # First 10 keys
-                
-                # Check for common keys
-                if 'back' in decrypted_data:
-                    self.logger.info(f"Found 'back' data with {len(decrypted_data['back'])} entries")
-                if 'lay' in decrypted_data:
-                    self.logger.info(f"Found 'lay' data with {len(decrypted_data['lay'])} entries")
-                if 'history' in decrypted_data:
-                    self.logger.info("Found historical odds data")
-            
-            # For now, just yield the raw decrypted data
-            # Later you can process this into proper OddsItem objects
-            yield {
-                'type': 'odds_data',
-                'bet_type': bet_type,
-                'scope': scope,
-                'match_id': self.collected_data['event_header'].get('match_id'),
-                'sport_id': self.collected_data['event_header'].get('sport_id'),
-                'tournament': self.collected_data['event_header'].get('tournament_name'),
-                'home': self.collected_data['event_header'].get('home'),
-                'away': self.collected_data['event_header'].get('away'),
-                'data': decrypted_data
-            }
-            
+            yield decrypted_data
+
         except Exception as e:
             self.logger.error(f"Error processing odds data: {type(e).__name__}: {str(e)}")
             self.logger.exception("Full traceback:")
@@ -276,20 +211,3 @@ class MatchSpider(BaseSpider):
         
         # You could implement retry logic here if needed
         # For now, just log the error
-
-    def parse_next_link(self, response):
-        """Override the typo in base class"""
-        return self.parse_next_links(response)
-        
-    def parse_next_links(self, response):
-        """For match spider, we typically don't follow links"""
-        return []
-
-    def closed(self, reason):
-        """Called when spider closes"""
-        self.logger.info(f"Spider closed: {reason}")
-        self.logger.info(f"Collected odds data for {len(self.collected_data['odds_data'])} bet type/scope combinations")
-        
-        # Summary of collected data
-        for odds_key, odds_data in self.collected_data['odds_data'].items():
-            self.logger.info(f"  - {odds_key}: {odds_data['bet_type']} / {odds_data['scope']}")
