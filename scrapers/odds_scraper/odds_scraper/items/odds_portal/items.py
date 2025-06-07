@@ -107,6 +107,7 @@ class MarketItem(Item):
     scope_id = Field() 
     scope_name = Field()
     handicap_type_id = Field()
+    handicap_type_name = Field()  # Added field
     handicap_value = Field()
     mixed_parameter_id = Field()
     mixed_parameter_name = Field()
@@ -208,6 +209,8 @@ class MarketLoader(ItemLoader):
     handicap_type_id_in = MapCompose(int)
     handicap_type_id_out = TakeFirst()
     
+    handicap_type_name_out = TakeFirst()  # Added output processor
+    
     handicap_value_in = MapCompose(float)
     handicap_value_out = TakeFirst()
     
@@ -242,28 +245,6 @@ class MatchEventOddsLoader(ItemLoader):
 
 
 # -------------------- Mapping Dictionaries --------------------
-
-BETTING_TYPE_NAMES = {
-    1: "1X2",
-    2: "Over/Under",
-    3: "Home/Away", 
-    4: "Double Chance",
-    5: "Asian Handicap",
-    6: "Draw No Bet",
-    7: "To Qualify",
-    8: "Correct Score",
-    9: "Half Time / Full Time",
-    10: "Odd or Even",
-    11: "Winner",
-    12: "European Handicap",
-    13: "Both Teams to Score"
-}
-
-SCOPE_NAMES = {
-    2: "Full Time",
-    3: "First Half",
-    4: "Second Half"
-}
 
 # Position to outcome type mapping based on betting type
 OUTCOME_TYPE_MAP = {

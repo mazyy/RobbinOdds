@@ -4,11 +4,9 @@ from odds_scraper.items.odds_portal.items import HeaderLoader, BodyLoader, PageV
 from .parser import MATCH_EVENT_REACT_HEADER_COMPONENT_XPATH, PAGE_VAR_XPATH, PAGE_VAR_KEYS_DICT,\
     EVENT_HEADERS_KEYS_DICT, EVENT_BODY_KEYS_DICT, load_json_str, add_json_value_to_itemloader, \
     extract_pagevar_data, decrypt_data_PBKDF2HMAC
+from .utils.match_event_parser import parse_match_event_odds
 import urllib.parse
 import scrapy
-import json
-from typing import Dict, List, Optional, Any
-
 
 class MatchSpider(BaseSpider):
     name = "oddsportal_match_spider"
@@ -83,12 +81,12 @@ class MatchSpider(BaseSpider):
         body_loader = add_json_value_to_itemloader(body_loader, body, keymaps=EVENT_BODY_KEYS_DICT)
         body_loader = add_json_value_to_itemloader(body_loader, react_header_json, keymaps=EVENT_BODY_KEYS_DICT)
 
-        event_header_item = header_loader.load_item()
-        event_body_item = body_loader.load_item()
+        self.event_header_item = header_loader.load_item()
+        self.event_body_item = body_loader.load_item()
 
         # Yield header and body items
-        yield event_header_item
-        yield event_body_item
+        yield self.event_header_item
+        yield self.event_body_item
 
         # --- Parse pageVar ---
         page_var_json = extract_pagevar_data(response, PAGE_VAR_XPATH)
@@ -102,23 +100,23 @@ class MatchSpider(BaseSpider):
         page_var_loader = add_json_value_to_itemloader(page_var_loader, default_settings, keymaps=PAGE_VAR_KEYS_DICT)
         page_var_loader = add_json_value_to_itemloader(page_var_loader, page_var_json, keymaps=PAGE_VAR_KEYS_DICT)
         
-        page_var_item = page_var_loader.load_item()
+        self.page_var_item = page_var_loader.load_item()
         
-        yield page_var_item
+        yield self.page_var_item
 
         # --- Generate odds requests --
-        for request in self.generate_odds_requests(event_header_item, page_var_item):
+        for request in self.generate_odds_requests():
             yield request
 
-    def generate_odds_requests(self, event_header: Dict, page_var: Dict):
+    def generate_odds_requests(self):
         """Generate requests for odds endpoints based on selected bet types and scopes"""
         # Extract necessary data
-        version_id = str(event_header.get('version_id', '1'))  # From header if available, else default to 1
-        sport_id = str(event_header.get('sport_id', ''))
-        event_id = event_header.get('match_id', '')
+        version_id = str(self.event_header_item.get('version_id', '1'))  # From header if available, else default to 1
+        sport_id = str(self.event_header_item.get('sport_id', ''))
+        event_id = self.event_header_item.get('match_id', '')
         
         # IMPORTANT: Use xhashf and decode it
-        xhash_encoded = event_header.get('xhashf', event_header.get('xhash', ''))
+        xhash_encoded = self.event_header_item.get('xhashf', self.event_header_item.get('xhash', ''))
         if not xhash_encoded:
             self.logger.error("No xhash found in event header")
             return
@@ -128,7 +126,7 @@ class MatchSpider(BaseSpider):
         self.logger.info(f"Using decoded xhash: {xhash} (from {xhash_encoded})")
         
         # Get available navigation data
-        nav_filtered = page_var.get('nav_filtered', {})
+        nav_filtered = self.page_var_item.get('nav_filtered', {})
         
         if not nav_filtered:
             self.logger.warning("No nav_filtered data found")
@@ -196,7 +194,24 @@ class MatchSpider(BaseSpider):
             
             self.logger.info(f"Successfully decrypted odds data for bet_type={bet_type}, scope={scope}")
             
-            yield decrypted_data
+                        # Extract mappings from additional_odds_info
+            additional_odds_info = self.event_body_item.get('additional_odds_info', {})
+            betting_type_names = additional_odds_info.get('bettingTypes', {})
+            scope_names = additional_odds_info.get('scopeNames', {})
+            handicap_names = additional_odds_info.get('handicaps', {})
+            providers_names = self.event_body_item.get('providers_names', {})
+
+            # Parse the odds
+            parsed_odds = parse_match_event_odds(
+                odds_response=decrypted_data,
+                match_id=self.event_header_item.get('match_id'),
+                bookmaker_names=providers_names,
+                betting_type_names=betting_type_names,
+                scope_names=scope_names,
+                handicap_names=handicap_names
+            )
+
+            yield parsed_odds
 
         except Exception as e:
             self.logger.error(f"Error processing odds data: {type(e).__name__}: {str(e)}")
