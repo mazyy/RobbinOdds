@@ -1,3 +1,4 @@
+# odds_scraper/odds_scraper/items/odds_portal/items.py
 from scrapy import Item, Field
 from scrapy.loader import ItemLoader
 from itemloaders.processors import MapCompose, TakeFirst
@@ -28,6 +29,7 @@ def convert_volume(value):
     
 # -------------------- Items --------------------
 class PageVarItem(Item):
+    match_id = Field()  # Added field
     default_betting_type = Field()
     default_scope = Field()
     nav = Field()
@@ -35,6 +37,7 @@ class PageVarItem(Item):
 
 class EventHeaderItem(Item):
     match_id = Field()
+    match_url = Field()  # Added field
     xhash = Field()
     xhashf = Field()
     is_live = Field()
@@ -127,6 +130,9 @@ class MatchEventOddsItem(Item):
     match_id = Field()
     encoded_event_id = Field()
     
+    # Match state - only is_started for pre-match
+    is_started = Field()
+    
     # Current context
     current_betting_type = Field()
     current_scope = Field()
@@ -134,9 +140,6 @@ class MatchEventOddsItem(Item):
     # Timestamp info
     time_base = Field()
     refresh_interval = Field()
-    
-    # Navigation structure
-    available_markets = Field()  # nav object
     
     # Broken parsers
     broken_parsers = Field()
@@ -231,6 +234,10 @@ class MatchEventOddsLoader(ItemLoader):
     # Scalar fields get TakeFirst
     match_id_out = TakeFirst()
     encoded_event_id_out = TakeFirst()
+    
+    # Match state field - only is_started
+    is_started_out = TakeFirst()
+    
     current_betting_type_out = TakeFirst()
     current_scope_out = TakeFirst()
     
@@ -241,7 +248,7 @@ class MatchEventOddsLoader(ItemLoader):
     refresh_interval_out = TakeFirst()
     
     # List/dict fields stay as they are (no output processor)
-    # available_markets, broken_parsers, back_markets, lay_markets
+    # broken_parsers, back_markets, lay_markets
 
 
 # -------------------- Mapping Dictionaries --------------------

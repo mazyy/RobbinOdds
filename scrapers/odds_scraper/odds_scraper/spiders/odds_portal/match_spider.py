@@ -1,58 +1,32 @@
-# odds_scraper/odds_scraper/spiders/odds_portal/match_spider.py
 from .base_spider import BaseSpider
 from odds_scraper.items.odds_portal.items import HeaderLoader, BodyLoader, PageVarLoader
 from .parser import MATCH_EVENT_REACT_HEADER_COMPONENT_XPATH, PAGE_VAR_XPATH, PAGE_VAR_KEYS_DICT,\
     EVENT_HEADERS_KEYS_DICT, EVENT_BODY_KEYS_DICT, load_json_str, add_json_value_to_itemloader, \
-    extract_pagevar_data, decrypt_data_PBKDF2HMAC
-from .utils.match_event_parser import parse_match_event_odds
-import urllib.parse
+    extract_pagevar_data
 import scrapy
 
 class MatchSpider(BaseSpider):
+    """Spider for scraping match metadata - runs once per match"""
     name = "oddsportal_match_spider"
     allowed_domains = ["oddsportal.com"]
     
     # Custom settings for rate limiting
     custom_settings = {
-        'CONCURRENT_REQUESTS': 2,
-        'DOWNLOAD_DELAY': 1.5,  # 1.5 seconds between requests
+        'CONCURRENT_REQUESTS': 4,
+        'DOWNLOAD_DELAY': 1.0,
         'RANDOMIZE_DOWNLOAD_DELAY': True,
-        'AUTOTHROTTLE_ENABLED': True,
-        'AUTOTHROTTLE_START_DELAY': 1,
-        'AUTOTHROTTLE_MAX_DELAY': 5,
-        'AUTOTHROTTLE_TARGET_CONCURRENCY': 2.0,
-        'AUTOTHROTTLE_DEBUG': True,  # Enable to see autothrottle stats
     }
     
-    def __init__(self, match_url: str = None, bet_types: str = None, scopes: str = None, **kwargs):
+    def __init__(self, match_url: str = None, **kwargs):
         super().__init__(**kwargs)
         if not match_url:
             raise ValueError("Provide match_url parameter")
         
         self.match_url = match_url
         self.start_urls = [match_url]
-        self.domain_name = "https://www.oddsportal.com"
-        
-        # Parse betting types and scopes from command line
-        self.selected_bet_types = bet_types.split(',') if bet_types else None
-        self.selected_scopes = scopes.split(',') if scopes else None
-        
-        # For now, if nothing specified, default to 1X2 fulltime
-        if not self.selected_bet_types:
-            self.selected_bet_types = ['1'] # 1X2
-        
-        if not self.selected_scopes:
-            self.selected_scopes = ['2']    # Full Time
         
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'
-        }
-        
-        self.endpoint_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Referer': self.match_url,
-            'X-Requested-With': 'XMLHttpRequest'
         }
 
     def parse_items(self, response):
@@ -81,12 +55,15 @@ class MatchSpider(BaseSpider):
         body_loader = add_json_value_to_itemloader(body_loader, body, keymaps=EVENT_BODY_KEYS_DICT)
         body_loader = add_json_value_to_itemloader(body_loader, react_header_json, keymaps=EVENT_BODY_KEYS_DICT)
 
-        self.event_header_item = header_loader.load_item()
-        self.event_body_item = body_loader.load_item()
+        event_header_item = header_loader.load_item()
+        event_body_item = body_loader.load_item()
+        
+        # Add the match URL to header for reference
+        event_header_item['match_url'] = self.match_url
 
         # Yield header and body items
-        yield self.event_header_item
-        yield self.event_body_item
+        yield event_header_item
+        yield event_body_item
 
         # --- Parse pageVar ---
         page_var_json = extract_pagevar_data(response, PAGE_VAR_XPATH)
@@ -100,129 +77,18 @@ class MatchSpider(BaseSpider):
         page_var_loader = add_json_value_to_itemloader(page_var_loader, default_settings, keymaps=PAGE_VAR_KEYS_DICT)
         page_var_loader = add_json_value_to_itemloader(page_var_loader, page_var_json, keymaps=PAGE_VAR_KEYS_DICT)
         
-        self.page_var_item = page_var_loader.load_item()
+        page_var_item = page_var_loader.load_item()
         
-        yield self.page_var_item
+        yield page_var_item
 
-        # --- Generate odds requests --
-        for request in self.generate_odds_requests():
-            yield request
+        # Log available markets for reference
+        nav_filtered = page_var_item.get('nav_filtered', {})
+        if nav_filtered:
+            self.logger.info(f"Match {event_header_item.get('match_id')} has available bet types: {list(nav_filtered.keys())}")
+            for bet_type, scopes in nav_filtered.items():
+                if isinstance(scopes, dict):
+                    self.logger.info(f"  Bet type {bet_type} has scopes: {list(scopes.keys())}")
 
-    def generate_odds_requests(self):
-        """Generate requests for odds endpoints based on selected bet types and scopes"""
-        # Extract necessary data
-        version_id = str(self.event_header_item.get('version_id', '1'))  # From header if available, else default to 1
-        sport_id = str(self.event_header_item.get('sport_id', ''))
-        event_id = self.event_header_item.get('match_id', '')
-        
-        # IMPORTANT: Use xhashf and decode it
-        xhash_encoded = self.event_header_item.get('xhashf', self.event_header_item.get('xhash', ''))
-        if not xhash_encoded:
-            self.logger.error("No xhash found in event header")
-            return
-            
-        # Decode the URL-encoded hash
-        xhash = urllib.parse.unquote(xhash_encoded)
-        self.logger.info(f"Using decoded xhash: {xhash} (from {xhash_encoded})")
-        
-        # Get available navigation data
-        nav_filtered = self.page_var_item.get('nav_filtered', {})
-        
-        if not nav_filtered:
-            self.logger.warning("No nav_filtered data found")
-            return
-        
-        self.logger.info(f"Available bet types: {list(nav_filtered.keys())}")
-        
-        request_count = 0
-
-        for bet_type_key, bet_type_scopes in nav_filtered.items():
-
-            if isinstance(bet_type_scopes, dict):
-                for scope_key, scope_value in bet_type_scopes.items():
-                    # Construct endpoint
-                    # Pattern: /match-event/{version}-{sportId}-{eventId}-{betTypeId}-{scopeId}-{xhash}.dat
-                    if scope_key in self.selected_scopes and bet_type_key in self.selected_bet_types:
-                        endpoint = f"{self.domain_name}/match-event/{version_id}-{sport_id}-{event_id}-{bet_type_key}-{scope_key}-{xhash}.dat"
-                        
-                        # Add query parameters
-                        endpoint += "?_="  # Empty timestamp parameter as seen in the requests
-                        
-                        self.logger.info(f"Requesting odds for bet_type={bet_type_key}, scope={scope_key}: {endpoint}")
-                        
-                        yield scrapy.Request(
-                            url=endpoint,
-                            headers=self.endpoint_headers,
-                            callback=self.parse_odds,
-                            errback=self.handle_odds_error,
-                            meta={
-                                'bet_type': bet_type_key,
-                                'scope': scope_key,
-                                'endpoint': endpoint,
-                            }
-                        )
-                        
-                        request_count += 1
-
-    def parse_odds(self, response):
-        """Parse the odds data from the endpoint"""
-        meta = response.meta
-        bet_type = meta.get('bet_type')
-        scope = meta.get('scope')
-        
-        self.logger.info(f"Parsing odds response for bet_type={bet_type}, scope={scope}, status={response.status}")
-        
-        if response.status != 200:
-            self.logger.error(f"Failed to fetch odds: HTTP {response.status}")
-            return
-        
-        try:
-            # Get the raw response text
-            encrypted_data = response.text.strip()
-            
-            if not encrypted_data:
-                self.logger.error("Empty response received")
-                return
-            
-            # Decrypt the data
-            self.logger.debug(f"Attempting to decrypt data of length: {len(encrypted_data)}")
-            decrypted_data = decrypt_data_PBKDF2HMAC(encrypted_data)
-            
-            if not decrypted_data:
-                self.logger.error("Failed to decrypt odds data")
-                return
-            
-            self.logger.info(f"Successfully decrypted odds data for bet_type={bet_type}, scope={scope}")
-            
-                        # Extract mappings from additional_odds_info
-            additional_odds_info = self.event_body_item.get('additional_odds_info', {})
-            betting_type_names = additional_odds_info.get('bettingTypes', {})
-            scope_names = additional_odds_info.get('scopeNames', {})
-            handicap_names = additional_odds_info.get('handicaps', {})
-            providers_names = self.event_body_item.get('providers_names', {})
-
-            # Parse the odds
-            parsed_odds = parse_match_event_odds(
-                odds_response=decrypted_data,
-                match_id=self.event_header_item.get('match_id'),
-                bookmaker_names=providers_names,
-                betting_type_names=betting_type_names,
-                scope_names=scope_names,
-                handicap_names=handicap_names
-            )
-
-            yield parsed_odds
-
-        except Exception as e:
-            self.logger.error(f"Error processing odds data: {type(e).__name__}: {str(e)}")
-            self.logger.exception("Full traceback:")
-
-    def handle_odds_error(self, failure):
-        """Handle errors when fetching odds"""
-        request = failure.request
-        meta = request.meta
-        
-        self.logger.error(f"Error fetching odds for bet_type={meta.get('bet_type')}, scope={meta.get('scope')}: {failure.value}")
-        
-        # You could implement retry logic here if needed
-        # For now, just log the error
+    def parse_next_link(self, response):
+        """No pagination needed for individual match pages"""
+        return []

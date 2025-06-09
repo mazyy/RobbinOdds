@@ -16,20 +16,23 @@ class MatchEventOddsParser:
                  bookmaker_names: Dict[str, str] = None,
                  betting_type_names: Dict[str, Dict] = None,
                  scope_names: Dict[str, str] = None,
-                 handicap_names: Dict[str, Dict] = None):
+                 handicap_names: Dict[str, Dict] = None,
+                 is_started: bool = False):
         """
-        Initialize parser with mappings from event body data
+        Initialize parser with mappings
         
         Args:
-            bookmaker_names: Dict mapping bookmaker IDs to names (from providers_names)
-            betting_type_names: Dict with betting type info (from bettingTypes in additional_odds_info)
-            scope_names: Dict mapping scope IDs to names (from scopeNames in additional_odds_info)
-            handicap_names: Dict with handicap info (from handicaps in additional_odds_info)
+            bookmaker_names: Dict mapping bookmaker IDs to names
+            betting_type_names: Dict with betting type info
+            scope_names: Dict mapping scope IDs to names
+            handicap_names: Dict with handicap info
+            is_started: Whether the match has started
         """
         self.bookmaker_names = bookmaker_names or {}
         self.betting_type_names = betting_type_names or {}
         self.scope_names = scope_names or {}
         self.handicap_names = handicap_names or {}
+        self.is_started = is_started
         
     def parse_match_event_odds(self, odds_response: Dict[str, Any], 
                              match_id: str = None) -> MatchEventOddsItem:
@@ -57,6 +60,9 @@ class MatchEventOddsParser:
             loader.add_value('match_id', match_id)
         loader.add_value('encoded_event_id', odds_data.get('encodeventId'))
         
+        # Add match state information - only is_started matters for pre-match
+        loader.add_value('is_started', self.is_started)
+        
         # Current context
         loader.add_value('current_betting_type', odds_data.get('bt'))
         loader.add_value('current_scope', odds_data.get('sc'))
@@ -68,8 +74,7 @@ class MatchEventOddsParser:
             
         loader.add_value('refresh_interval', odds_data.get('refresh'))
         
-        # Navigation and broken parsers
-        loader.add_value('available_markets', odds_data.get('nav', {}))
+        # Broken parsers
         loader.add_value('broken_parsers', odds_data.get('brokenParser', []))
         
         # Parse markets
@@ -127,8 +132,8 @@ class MatchEventOddsParser:
         
         loader.add_value('handicap_type_id', handicap_type_id)
         
-        # Get handicap type name - if 0, it's "No Handicap"
-        if handicap_type_id == 0:
+        # Get handicap type name
+        if handicap_type_id == 0 or str(handicap_type_id) == "0":
             handicap_type_name = "No Handicap"
         else:
             handicap_info = self.handicap_names.get(str(handicap_type_id), {})
@@ -341,17 +346,19 @@ def parse_match_event_odds(odds_response: Dict[str, Any],
                           bookmaker_names: Dict[str, str] = None,
                           betting_type_names: Dict[str, Dict] = None,
                           scope_names: Dict[str, str] = None,
-                          handicap_names: Dict[str, Dict] = None) -> MatchEventOddsItem:
+                          handicap_names: Dict[str, Dict] = None,
+                          is_started: bool = False) -> MatchEventOddsItem:
     """
     Convenience function to parse match event odds data
     
     Args:
         odds_response: Decrypted response with 's' and 'd' fields
         match_id: Match ID from event header
-        bookmaker_names: Bookmaker ID to name mapping (from providers_names)
-        betting_type_names: Betting type info (from bettingTypes in additional_odds_info)
-        scope_names: Scope ID to name mapping (from scopeNames in additional_odds_info)
-        handicap_names: Handicap info (from handicaps in additional_odds_info)
+        bookmaker_names: Bookmaker ID to name mapping
+        betting_type_names: Betting type info
+        scope_names: Scope ID to name mapping
+        handicap_names: Handicap info
+        is_started: Whether the match has started
         
     Returns:
         MatchEventOddsItem with parsed data
@@ -360,6 +367,7 @@ def parse_match_event_odds(odds_response: Dict[str, Any],
         bookmaker_names=bookmaker_names,
         betting_type_names=betting_type_names,
         scope_names=scope_names,
-        handicap_names=handicap_names
+        handicap_names=handicap_names,
+        is_started=is_started
     )
     return parser.parse_match_event_odds(odds_response, match_id)
