@@ -14,160 +14,191 @@ def convert_unix_timestamp(timestamp):
     except (ValueError, TypeError):
         return None
 
-def parse_score(score_str):
-    """Parse score string like '98:107' into dict"""
-    try:
-        if score_str and ':' in score_str:
-            home, away = score_str.strip().split(':')
-            return {
-                'home': int(home.strip()),
-                'away': int(away.strip())
-            }
-        return None
-    except (ValueError, TypeError):
-        return None
+# -------------------- League Discovery Items --------------------
 
-def parse_partial_scores(partial_str):
-    """Parse partial scores like '29:32, 19:21, 27:26, 23:28' into list of dicts"""
-    try:
-        if not partial_str:
-            return []
-        
-        quarters = []
-        for quarter in partial_str.split(','):
-            if ':' in quarter:
-                home, away = quarter.strip().split(':')
-                quarters.append({
-                    'home': int(home.strip()),
-                    'away': int(away.strip())
-                })
-        return quarters
-    except (ValueError, TypeError):
-        return []
+class SportItem(Item):
+    """Sport information"""
+    sport_id = Field()
+    sport_name = Field()
+    sport_url_slug = Field()
 
-# -------------------- Items --------------------
+class CountryItem(Item):
+    """Country information"""
+    country_id = Field()
+    country_name = Field()
+    country_url_slug = Field()
+    region = Field()
 
-class MatchResultItem(Item):
-    """Individual match result from league results page"""
-    # Match identification
-    match_id = Field()
-    encoded_event_id = Field()
-    match_url = Field()
+class LeagueItem(Item):
+    """League/Tournament information"""
+    league_id = Field()           # Encoded ID from OddsPortal
+    league_name = Field()         # Display name
+    league_url_slug = Field()     # URL component
+    league_url = Field()          # Full base URL
+    sport_id = Field()
+    sport_name = Field()
+    country_id = Field()
+    country_name = Field()
+    is_active = Field()
+    league_type = Field()         # domestic, international, cup
+
+class SeasonItem(Item):
+    """Individual season for a league"""
+    season_id = Field()           # e.g., "2023-2024" or "current"
+    season_name = Field()         # Display name
+    season_url = Field()          # Full URL to season
+    league_id = Field()
+    league_name = Field()
+    is_current = Field()          # Boolean
+    start_year = Field()          # Extracted from season_id
+    end_year = Field()            # Extracted from season_id
+    has_results = Field()         # Whether /results/ page exists
+    has_fixtures = Field()        # Whether upcoming matches exist
+
+class LeagueDiscoveryItem(Item):
+    """Complete league discovery result"""
+    # Sport info
+    sport = Field()               # SportItem
+    
+    # Country info
+    country = Field()             # CountryItem
+    
+    # League info
+    league = Field()              # LeagueItem
+    
+    # Available seasons
+    seasons = Field()             # List of SeasonItem
+    total_seasons = Field()
+    
+    # Metadata
+    discovery_timestamp = Field()
+    discovery_url = Field()       # URL used for discovery
+
+# -------------------- Match List Items --------------------
+
+class MatchInfoItem(Item):
+    """Minimal match info for feeding to match spider"""
+    # Essential identifiers
+    match_id = Field()            # OddsPortal match ID
+    match_url = Field()           # Full URL to match page
+    
+    # Timing
+    match_timestamp = Field()     # datetime object
+    status = Field()              # scheduled, finished, live, postponed
     
     # Teams
-    home_team_name = Field()
-    away_team_name = Field()
-    home_team_id = Field()
-    away_team_id = Field()
-    home_country = Field()
-    away_country = Field()
+    home_team = Field()
+    away_team = Field()
     
-    # Match status
-    status_id = Field()
-    event_stage_id = Field()
-    event_stage_name = Field()
-    is_finished = Field()
-    is_after_extra_time = Field()
+    # Context
+    league_id = Field()
+    league_name = Field()
+    season_id = Field()
+    sport_id = Field()
+    tournament_stage = Field()    # Regular Season, Playoffs, etc.
     
-    # Tournament info
-    tournament_id = Field()
-    tournament_name = Field()
-    tournament_stage_id = Field()
-    tournament_stage_name = Field()
+    # Metadata
+    extracted_at = Field()        # When this was extracted
+
+class SeasonMatchesItem(Item):
+    """Container for matches from a season"""
+    # Season identification  
+    league_id = Field()
+    league_name = Field()
+    season_id = Field()
     sport_id = Field()
     sport_name = Field()
     country_name = Field()
     
-    # Scores
-    final_score = Field()  # Dict with 'home' and 'away' keys
-    home_score = Field()
-    away_score = Field()
-    partial_scores = Field()  # List of dicts for quarter/period scores
-    
-    # Winner
-    home_winner_status = Field()  # 'win', 'lost', 'draw'
-    away_winner_status = Field()
-    
-    # Match timing
-    match_timestamp = Field()  # datetime object
-    
-    # Venue
-    venue = Field()
-    venue_town = Field()
-    venue_country = Field()
-    
-    # Odds summary
-    bookmakers_count = Field()
-    odds_summary = Field()  # List of OddsSummaryItem
-    
-    # Additional info
-    match_info = Field()  # List of additional match info
-
-class OddsSummaryItem(Item):
-    """Summary of odds for a specific betting type/outcome"""
-    event_id = Field()
-    outcome_id = Field()
-    outcome_result_id = Field()  # 1 or 2 indicating which team
-    betting_type_id = Field()
-    scope_id = Field()
-    avg_odds = Field()
-    max_odds = Field()
-    max_odds_provider_id = Field()
-    is_active = Field()
-    active_bookmakers_count = Field()
-
-class LeagueResultsPageItem(Item):
-    """Container for a page of league results"""
-    tournament_id = Field()
-    tournament_name = Field()
-    season = Field()
+    # Extraction info
+    extraction_type = Field()     # "results" or "fixtures"
     page_number = Field()
-    total_matches = Field()
-    matches_per_page = Field()
     total_pages = Field()
     has_next_page = Field()
-    matches = Field()  # List of MatchResultItem
+    
+    # Matches
+    matches = Field()             # List of MatchInfoItem
+    total_matches = Field()
+    
+    # Metadata
+    extraction_timestamp = Field()
+    source_url = Field()
 
 # -------------------- Loaders --------------------
 
-class MatchResultLoader(ItemLoader):
-    default_item_class = MatchResultItem
+class SportLoader(ItemLoader):
+    default_item_class = SportItem
+    default_input_processor = MapCompose()
+    default_output_processor = TakeFirst()
+
+class CountryLoader(ItemLoader):
+    default_item_class = CountryItem
+    default_input_processor = MapCompose()
+    default_output_processor = TakeFirst()
+
+class LeagueLoader(ItemLoader):
+    default_item_class = LeagueItem
     default_input_processor = MapCompose()
     default_output_processor = TakeFirst()
     
+    is_active_in = MapCompose(lambda x: x if isinstance(x, bool) else True)
+
+class SeasonLoader(ItemLoader):
+    default_item_class = SeasonItem
+    default_input_processor = MapCompose()
+    default_output_processor = TakeFirst()
+    
+    # Extract years from season_id like "2023-2024"
+    start_year_in = MapCompose(lambda x: int(x.split('-')[0]) if '-' in str(x) else None)
+    end_year_in = MapCompose(lambda x: int(x.split('-')[1]) if '-' in str(x) else None)
+    
+    # Boolean fields
+    is_current_in = MapCompose(lambda x: x if isinstance(x, bool) else False)
+    has_results_in = MapCompose(lambda x: x if isinstance(x, bool) else True)
+    has_fixtures_in = MapCompose(lambda x: x if isinstance(x, bool) else False)
+
+class LeagueDiscoveryLoader(ItemLoader):
+    default_item_class = LeagueDiscoveryItem
+    default_input_processor = MapCompose()
+    default_output_processor = TakeFirst()
+    
+    # Object fields stay as objects
+    sport_out = Identity()
+    country_out = Identity()
+    league_out = Identity()
+    
     # List fields
-    partial_scores_in = MapCompose(parse_partial_scores)
-    partial_scores_out = Identity()  # Keep as list
+    seasons_out = Identity()
     
-    odds_summary_out = Identity()  # Keep as list
-    match_info_out = Identity()  # Keep as list
-    
-    # Score parsing
-    final_score_in = MapCompose(parse_score)
+    # Timestamp
+    discovery_timestamp_in = MapCompose(lambda x: datetime.now())
+
+class MatchInfoLoader(ItemLoader):
+    default_item_class = MatchInfoItem
+    default_input_processor = MapCompose()
+    default_output_processor = TakeFirst()
     
     # Timestamp conversion
     match_timestamp_in = MapCompose(convert_unix_timestamp)
+    extracted_at_in = MapCompose(lambda x: datetime.now())
     
-    # Boolean fields
-    is_finished_in = MapCompose(lambda x: x == 3)
-    is_after_extra_time_in = MapCompose(lambda x: x == 10)
+    # Status mapping from status-id
+    status_in = MapCompose(lambda x: {
+        0: "scheduled",
+        1: "live", 
+        2: "live",
+        3: "finished",
+        4: "postponed",
+        5: "cancelled"
+    }.get(x, "unknown") if isinstance(x, int) else x)
 
-class OddsSummaryLoader(ItemLoader):
-    default_item_class = OddsSummaryItem
-    default_input_processor = MapCompose()
-    default_output_processor = TakeFirst()
-    
-    # Float fields
-    avg_odds_in = MapCompose(float)
-    max_odds_in = MapCompose(float)
-    
-    # Integer fields
-    active_bookmakers_count_in = MapCompose(int)
-
-class LeagueResultsPageLoader(ItemLoader):
-    default_item_class = LeagueResultsPageItem
+class SeasonMatchesLoader(ItemLoader):
+    default_item_class = SeasonMatchesItem
     default_input_processor = MapCompose()
     default_output_processor = TakeFirst()
     
     # List field
-    matches_out = Identity()  # Keep as list
+    matches_out = Identity()
+    
+    # Timestamp
+    extraction_timestamp_in = MapCompose(lambda x: datetime.now())
