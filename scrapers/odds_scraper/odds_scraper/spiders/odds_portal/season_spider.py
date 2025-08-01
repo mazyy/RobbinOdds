@@ -1,5 +1,3 @@
-# scrapers/odds_scraper/odds_scraper/spiders/odds_portal/season_spider.py
-
 from odds_scraper.spiders.odds_portal.base_spider import BaseSpider
 from odds_scraper.spiders.odds_portal.parser import decrypt_data_PBKDF2HMAC
 from odds_scraper.spiders.odds_portal.utils.season_matches_parser import parse_season_matches
@@ -61,6 +59,16 @@ class SeasonSpider(BaseSpider):
         self.mode = mode.lower()
         self.max_pages = int(max_pages) if max_pages else None
         self.start_page = int(start_page)
+
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
         
         # Context info
         self.league_name = league_name or self._extract_from_url(season_url, 'league')
@@ -114,8 +122,16 @@ class SeasonSpider(BaseSpider):
     
     def _parse_results_init(self, response):
         """Initialize results extraction"""
-        # Extract AJAX endpoint pattern for paginated results
-        ajax_pattern = self._extract_ajax_pattern(response)
+        # Method 1: Try to extract from tournament-component
+        ajax_pattern = self._extract_ajax_pattern_from_component(response)
+        
+        # Method 2: If not found, try from pageOutrightsVar
+        if not ajax_pattern:
+            ajax_pattern = self._extract_ajax_pattern_from_pagevar(response)
+        
+        # Method 3: Try next-matches component
+        if not ajax_pattern:
+            ajax_pattern = self._extract_ajax_pattern_from_next_matches(response)
         
         if not ajax_pattern:
             self.logger.error("Failed to find AJAX endpoint pattern for results")
@@ -128,6 +144,75 @@ class SeasonSpider(BaseSpider):
             page=self.start_page,
             referer=response.url
         )
+    
+    def _extract_ajax_pattern_from_component(self, response):
+        """Extract AJAX pattern from tournament-component"""
+        # Look for tournament-component
+        tournament_component = response.css('tournament-component::attr(:sport-data)').get()
+        
+        if tournament_component:
+            try:
+                data = json.loads(tournament_component)
+                odds_request = data.get('oddsRequest', {})
+                url = odds_request.get('url', '')
+                
+                # Parse the URL to extract pattern
+                # Format: /ajax-sport-country-tournament-archive_/1/jDTEm9zs/
+                if '/ajax-sport-country-tournament-archive_/' in url:
+                    parts = url.strip('/').split('/')
+                    if len(parts) >= 3:
+                        return {
+                            'sport_id': parts[1],
+                            'encoded_id': parts[2],
+                            'base_url': f"/ajax-sport-country-tournament-archive_/{parts[1]}/{parts[2]}"
+                        }
+            except json.JSONDecodeError:
+                self.logger.warning("Failed to parse tournament-component data")
+        
+        return None
+    
+    def _extract_ajax_pattern_from_pagevar(self, response):
+        """Extract pattern from pageOutrightsVar"""
+        # Look for pageOutrightsVar script
+        pagevar_script = response.xpath('//script[contains(text(), "pageOutrightsVar")]/text()').get()
+        
+        if pagevar_script:
+            # Extract the JSON string
+            match = re.search(r'var\s+pageOutrightsVar\s*=\s*\'({.*?})\'', pagevar_script)
+            if match:
+                try:
+                    data = json.loads(match.group(1))
+                    return {
+                        'sport_id': str(data.get('sid', self.sport_id)),
+                        'encoded_id': data.get('id', self.league_id),
+                        'base_url': f"/ajax-sport-country-tournament-archive_/{data.get('sid', self.sport_id)}/{data.get('id', self.league_id)}"
+                    }
+                except json.JSONDecodeError:
+                    pass
+        
+        return None
+    
+    def _extract_ajax_pattern_from_next_matches(self, response):
+        """Extract from next-matches component"""
+        next_matches = response.css('next-matches::attr(:odds-request)').get()
+        
+        if next_matches:
+            try:
+                data = json.loads(next_matches)
+                url = data.get('url', '')
+                
+                if '/ajax-sport-country-tournament-archive_/' in url:
+                    parts = url.strip('/').split('/')
+                    if len(parts) >= 3:
+                        return {
+                            'sport_id': parts[1],
+                            'encoded_id': parts[2],
+                            'base_url': f"/ajax-sport-country-tournament-archive_/{parts[1]}/{parts[2]}"
+                        }
+            except json.JSONDecodeError:
+                pass
+        
+        return None
     
     def _parse_fixtures_init(self, response):
         """Initialize fixtures extraction"""
@@ -196,44 +281,13 @@ class SeasonSpider(BaseSpider):
                 # Try to extract matches directly from the page
                 yield from self._parse_fixtures_from_page(response, tournament_info)
     
-    def _extract_ajax_pattern(self, response):
-        """Extract AJAX endpoint pattern for results pagination"""
-        # Look for AJAX URL pattern in scripts
-        patterns = [
-            r'/ajax-sport-country-tournament-archive_/(\d+)/([^/]+)/([^/]+)/',
-            r'"url"\s*:\s*"(/ajax-sport-country-tournament[^"]+)"',
-        ]
-        
-        all_scripts = ' '.join(response.xpath('//script/text()').getall())
-        
-        for pattern in patterns:
-            match = re.search(pattern, all_scripts)
-            if match:
-                if len(match.groups()) >= 3:
-                    return {
-                        'sport_id': match.group(1),
-                        'encoded_id': match.group(2),
-                        'bookiehash': match.group(3)
-                    }
-                else:
-                    # Parse the full URL
-                    url_match = re.search(r'/ajax-sport-country-tournament-archive_/(\d+)/([^/]+)/([^/]+)/', match.group(1))
-                    if url_match:
-                        return {
-                            'sport_id': url_match.group(1),
-                            'encoded_id': url_match.group(2),
-                            'bookiehash': url_match.group(3)
-                        }
-        
-        return None
-    
     def _extract_tournament_info(self, response):
         """Extract tournament info from page"""
-        # Look for pageOutrightsVar
-        script_text = response.xpath('//script[contains(text(), "pageOutrightsVar")]/text()').get()
+        # Look for pageOutrightsVar using selector
+        pagevar_script = response.xpath('//script[contains(text(), "pageOutrightsVar")]/text()').get()
         
-        if script_text:
-            match = re.search(r'var\s+pageOutrightsVar\s*=\s*\'({.*?})\'', script_text, re.DOTALL)
+        if pagevar_script:
+            match = re.search(r'var\s+pageOutrightsVar\s*=\s*\'({.*?})\'', pagevar_script, re.DOTALL)
             if match:
                 try:
                     data = json.loads(match.group(1))
@@ -252,22 +306,21 @@ class SeasonSpider(BaseSpider):
     
     def _extract_odds_request_url(self, response):
         """Extract odds request URL for fixtures"""
-        # Look for oddsRequest in scripts
-        patterns = [
-            r'"url"\s*:\s*"(/ajax-sport-country-tournament_/[^"]+)"',
-            r'oddsRequest\s*:\s*{[^}]*"url"\s*:\s*"([^"]+)"',
-        ]
+        # Look for tournament-component first
+        tournament_component = response.css('tournament-component::attr(:sport-data)').get()
         
-        all_scripts = ' '.join(response.xpath('//script/text()').getall())
-        
-        for pattern in patterns:
-            match = re.search(pattern, all_scripts)
-            if match:
-                url = match.group(1)
-                # Make it absolute
-                if url.startswith('/'):
-                    return f"https://www.oddsportal.com{url}"
-                return url
+        if tournament_component:
+            try:
+                data = json.loads(tournament_component)
+                odds_request = data.get('oddsRequest', {})
+                url = odds_request.get('url', '')
+                if url:
+                    # Make it absolute
+                    if url.startswith('/'):
+                        return f"https://www.oddsportal.com{url}"
+                    return url
+            except json.JSONDecodeError:
+                pass
         
         return None
     
@@ -278,11 +331,21 @@ class SeasonSpider(BaseSpider):
             return
         
         # Build AJAX URL for results
-        ajax_base = f"/ajax-sport-country-tournament-archive_/{self.ajax_info['sport_id']}/{self.ajax_info['encoded_id']}/{self.ajax_info['bookiehash']}"
-        timestamp = int(time.time() * 1000)
-        timezone = "3.5"  # Default timezone offset
+        # The pattern from the HTML shows it should be: /ajax-sport-country-tournament-archive_/{sport_id}/{encoded_id}/
+        # But for pagination, we need to add page and timezone parameters
         
-        ajax_url = f"https://www.oddsportal.com{ajax_base}/{page}/{timezone}/?_={timestamp}"
+        # Get base URL from ajax_info
+        base_url = self.ajax_info.get('base_url')
+        if not base_url:
+            base_url = f"/ajax-sport-country-tournament-archive_/{self.ajax_info['sport_id']}/{self.ajax_info['encoded_id']}"
+        
+        # Add pagination parameters
+        # Based on OddsPortal patterns, the full URL is:
+        # /ajax-sport-country-tournament-archive_/{sport_id}/{encoded_id}/{page}/{timezone}/?_={timestamp}
+        timestamp = int(time.time() * 1000)
+        timezone = "0"  # Use 0 for UTC
+        
+        ajax_url = f"https://www.oddsportal.com{base_url}/{page}/{timezone}/?_={timestamp}"
         
         self.logger.info(f"Requesting results page {page}: {ajax_url}")
         
@@ -292,7 +355,8 @@ class SeasonSpider(BaseSpider):
             headers={
                 'X-Requested-With': 'XMLHttpRequest',
                 'Referer': referer,
-                'Accept': 'application/json, text/plain, */*'
+                'Accept': 'application/json, text/plain, */*',
+                'User-Agent': self.headers['User-Agent']
             },
             meta={
                 'page': page,

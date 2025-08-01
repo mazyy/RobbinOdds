@@ -27,6 +27,15 @@ class LeagueSpider(BaseSpider):
         if not league_url:
             raise ValueError("league_url parameter is required")
         
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
         self.league_url = league_url.rstrip('/')
         self.start_urls = [self.league_url + '/results/']  # Start with results page
         
@@ -43,21 +52,6 @@ class LeagueSpider(BaseSpider):
         discovery_item = parser.parse_discovery_page(response)
         
         if discovery_item:
-            # Log summary
-            league = discovery_item.get('league', {})
-            seasons = discovery_item.get('seasons', [])
-            
-            self.logger.info(
-                f"Discovered league: {league.get('league_name')} "
-                f"(ID: {league.get('league_id')}) with {len(seasons)} seasons"
-            )
-            
-            for season in seasons:
-                self.logger.info(
-                    f"  - {season.get('season_name')} "
-                    f"({'Current' if season.get('is_current') else season.get('season_id')})"
-                )
-            
             yield discovery_item
         else:
             self.logger.error("Failed to parse discovery data")
