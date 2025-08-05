@@ -88,22 +88,47 @@ class FootyStatsBaseSpider(scrapy.Spider):
             self.stats['successful_responses'] += 1
             self.log_api_metadata(data, page)
             
+            # Handle both list and single object responses
             data_items = data.get('data', [])
-            self.logger.info(f"Processing {len(data_items)} items from {self.endpoint_name}")
             
-            for item_data in data_items:
+            # Check if data is a list or single object
+            if isinstance(data_items, list):
+                # Standard case: array of items
+                self.logger.info(f"Processing {len(data_items)} items from {self.endpoint_name}")
+                
+                for item_data in data_items:
+                    self.stats['items_processed'] += 1
+                    
+                    try:
+                        item = self.parse_data_item(item_data)
+                        if item:
+                            self.stats['items_yielded'] += 1
+                            yield item
+                    except Exception as e:
+                        self.logger.error(f"Error parsing item: {e}")
+                        continue
+                
+                # Handle pagination for list responses
+                yield from self.handle_pagination(data, response)
+                
+            elif isinstance(data_items, dict):
+                # Special case: single object (like match endpoint)
+                self.logger.info(f"Processing single object from {self.endpoint_name}")
                 self.stats['items_processed'] += 1
                 
                 try:
-                    item = self.parse_data_item(item_data)
+                    item = self.parse_data_item(data_items)
                     if item:
                         self.stats['items_yielded'] += 1
                         yield item
                 except Exception as e:
-                    self.logger.error(f"Error parsing item: {e}")
-                    continue
-            
-            yield from self.handle_pagination(data, response)
+                    self.logger.error(f"Error parsing single object: {e}")
+                    
+                # No pagination for single object responses
+                
+            else:
+                self.logger.error(f"Unexpected data type: {type(data_items)}. Expected list or dict.")
+                self.stats['failed_responses'] += 1
             
         except json.JSONDecodeError as e:
             self.logger.error(f"Invalid JSON response: {e}")
@@ -125,8 +150,10 @@ class FootyStatsBaseSpider(scrapy.Spider):
             self.logger.error("Response missing 'data' field")
             return False
         
-        if not isinstance(data['data'], list):
-            self.logger.error("Response 'data' field is not a list")
+        # Accept both list and dict for data field
+        data_field = data['data']
+        if not isinstance(data_field, (list, dict)):
+            self.logger.error(f"Response 'data' field is neither list nor dict: {type(data_field)}")
             return False
         
         return True
@@ -146,6 +173,7 @@ class FootyStatsBaseSpider(scrapy.Spider):
                 self.logger.info(f"API requests remaining: {remaining}")
     
     def handle_pagination(self, data: Dict[str, Any], response) -> Iterator[scrapy.Request]:
+        """Only handle pagination for list responses"""
         pager = data.get('pager', {})
         if not pager:
             return
