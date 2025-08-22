@@ -24,6 +24,7 @@ class CountryListItem(Item):
     iso = Field()           # ISO country code
     country = Field()       # Country name
     iso_number = Field()    # ISO numeric code
+    # Note: Multilingual name fields (name_jp, name_tr, etc.) are ignored per instructions
     extracted_at = Field()  # When this was extracted
 
 class CountryListLoader(ItemLoader):

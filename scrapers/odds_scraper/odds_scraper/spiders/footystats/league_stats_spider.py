@@ -25,7 +25,7 @@ class LeagueStatsSpider(FootyStatsBaseSpider):
     """
     
     name = "footystats_league_stats"
-    endpoint_name = "league-stats"
+    endpoint_name = "league-season"
     allowed_domains = ["api.football-data-api.com"]
     
     def __init__(self, api_key: str = "example", season_id: str = None,

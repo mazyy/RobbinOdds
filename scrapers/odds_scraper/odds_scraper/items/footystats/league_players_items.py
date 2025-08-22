@@ -89,6 +89,37 @@ class LeaguePlayerItem(Item):
     
     # Market value (if available)
     market_value = Field()              # Market value
+    contract_expires = Field()          # Contract expiration date
+    
+    # Additional playing time stats
+    substitute_in = Field()             # Times subbed in
+    substitute_out = Field()            # Times subbed out
+    captain = Field()                   # Times as captain
+    penalties_taken = Field()           # Penalties taken
+    penalties_scored = Field()          # Penalties scored
+    
+    # More detailed stats often in API
+    crosses = Field()                   # Crosses attempted
+    corners_taken = Field()             # Corner kicks taken
+    through_balls = Field()             # Through balls played
+    long_balls = Field()                # Long balls attempted
+    
+    # Defensive stats
+    aerial_duels_won = Field()          # Aerial duels won
+    aerial_duels_total = Field()        # Total aerial duels
+    duels_won = Field()                 # Ground duels won
+    duels_total = Field()               # Total ground duels
+    
+    # Additional goal stats
+    goals_left_foot = Field()           # Goals with left foot
+    goals_right_foot = Field()          # Goals with right foot
+    goals_header = Field()              # Goals with header
+    goals_inside_box = Field()          # Goals from inside penalty area
+    goals_outside_box = Field()         # Goals from outside penalty area
+    
+    # Form and streaks
+    current_goals_streak = Field()      # Current scoring streak
+    longest_goals_streak = Field()      # Longest scoring streak
     
     # Metadata
     extracted_at = Field()              # When this was extracted
@@ -139,6 +170,28 @@ class LeaguePlayerLoader(ItemLoader):
     mins_per_goal_in = MapCompose(safe_float)
     mins_per_assist_in = MapCompose(safe_float)
     market_value_in = MapCompose(safe_float)
+    
+    # Additional integer fields
+    substitute_in_in = MapCompose(safe_int)
+    substitute_out_in = MapCompose(safe_int)
+    captain_in = MapCompose(safe_int)
+    penalties_taken_in = MapCompose(safe_int)
+    penalties_scored_in = MapCompose(safe_int)
+    crosses_in = MapCompose(safe_int)
+    corners_taken_in = MapCompose(safe_int)
+    through_balls_in = MapCompose(safe_int)
+    long_balls_in = MapCompose(safe_int)
+    aerial_duels_won_in = MapCompose(safe_int)
+    aerial_duels_total_in = MapCompose(safe_int)
+    duels_won_in = MapCompose(safe_int)
+    duels_total_in = MapCompose(safe_int)
+    goals_left_foot_in = MapCompose(safe_int)
+    goals_right_foot_in = MapCompose(safe_int)
+    goals_header_in = MapCompose(safe_int)
+    goals_inside_box_in = MapCompose(safe_int)
+    goals_outside_box_in = MapCompose(safe_int)
+    current_goals_streak_in = MapCompose(safe_int)
+    longest_goals_streak_in = MapCompose(safe_int)
     
     # Timestamp
     extracted_at_in = MapCompose(lambda x: datetime.now())
@@ -224,6 +277,37 @@ def create_league_player_item(item_data: dict) -> LeaguePlayerItem:
     
     # Market value
     loader.add_value('market_value', item_data.get('market_value'))
+    loader.add_value('contract_expires', item_data.get('contract_expires'))
+    
+    # Additional playing time stats
+    loader.add_value('substitute_in', item_data.get('substitute_in'))
+    loader.add_value('substitute_out', item_data.get('substitute_out'))
+    loader.add_value('captain', item_data.get('captain'))
+    loader.add_value('penalties_taken', item_data.get('penalties_taken'))
+    loader.add_value('penalties_scored', item_data.get('penalties_scored'))
+    
+    # More detailed stats
+    loader.add_value('crosses', item_data.get('crosses'))
+    loader.add_value('corners_taken', item_data.get('corners_taken'))
+    loader.add_value('through_balls', item_data.get('through_balls'))
+    loader.add_value('long_balls', item_data.get('long_balls'))
+    
+    # Defensive stats
+    loader.add_value('aerial_duels_won', item_data.get('aerial_duels_won'))
+    loader.add_value('aerial_duels_total', item_data.get('aerial_duels_total'))
+    loader.add_value('duels_won', item_data.get('duels_won'))
+    loader.add_value('duels_total', item_data.get('duels_total'))
+    
+    # Additional goal stats
+    loader.add_value('goals_left_foot', item_data.get('goals_left_foot'))
+    loader.add_value('goals_right_foot', item_data.get('goals_right_foot'))
+    loader.add_value('goals_header', item_data.get('goals_header'))
+    loader.add_value('goals_inside_box', item_data.get('goals_inside_box'))
+    loader.add_value('goals_outside_box', item_data.get('goals_outside_box'))
+    
+    # Form and streaks
+    loader.add_value('current_goals_streak', item_data.get('current_goals_streak'))
+    loader.add_value('longest_goals_streak', item_data.get('longest_goals_streak'))
     
     # Metadata
     loader.add_value('extracted_at', None)

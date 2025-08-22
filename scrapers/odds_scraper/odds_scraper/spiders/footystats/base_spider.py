@@ -89,7 +89,11 @@ class FootyStatsBaseSpider(scrapy.Spider):
             self.log_api_metadata(data, page)
             
             # Handle both list and single object responses
-            data_items = data.get('data', [])
+            # Allow spiders to override data extraction
+            if hasattr(self, 'extract_data_items'):
+                data_items = self.extract_data_items(data.get('data', {}))
+            else:
+                data_items = data.get('data', [])
             
             # Check if data is a list or single object
             if isinstance(data_items, list):
@@ -219,7 +223,8 @@ class FootyStatsBaseSpider(scrapy.Spider):
         self.logger.error(f"Request failed for {endpoint} (page {page}): {failure.value}")
         self.stats['failed_responses'] += 1
         
-        if failure.check(scrapy.exceptions.HttpError):
+        from scrapy.spidermiddlewares.httperror import HttpError
+        if failure.check(HttpError):
             response = failure.value.response
             if response.status == 401:
                 self.logger.error("Authentication failed - check API key")

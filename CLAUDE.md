@@ -1,107 +1,328 @@
-# CLAUDE.md
+# CLAUDE.md - Value Betting Platform
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides comprehensive guidance to Claude Code when working with the value betting platform codebase.
 
-## Project Overview
-Sports betting odds scraping platform that extracts data from FootyStats API and OddsPortal website. Uses Scrapy framework with Airflow orchestration for automated data collection.
+## Core Development Philosophy
 
-## Common Commands
+### KISS (Keep It Simple, Stupid)
+Start with the simplest solution that works. We're building a data pipeline, not a spaceship. Complexity should only be added when proven necessary through actual bottlenecks or failures.
 
-### Scrapy Operations
-```bash
-# Navigate to scrapy project directory
-cd scrapers/odds_scraper
+### YAGNI (You Aren't Gonna Need It)
+Don't build for hypothetical scenarios. We'll add multi-sport support when we actually need it, not because we might need it someday.
 
-# List all available spiders
-scrapy list
+### Modular Monolith First
+Start with a well-structured monolith. Microservices come later if needed. Each component should be modular enough to extract but integrated enough to work simply.
 
-# Run FootyStats spiders
-scrapy crawl footystats_country_list -a api_key="your_key"
-scrapy crawl footystats_league_list -a api_key="your_key" -a country="England"
-scrapy crawl footystats_league_matches -a api_key="your_key" -a league_id="2790"
+### Data First, UI Later
+Focus on reliable data collection and processing. Dashboards and fancy UIs come after we have solid data pipelines.
 
-# Run OddsPortal spiders (decoupled workflow)
-# Step 1: Get match metadata
-scrapy crawl oddsportal_match_spider -O match_data.json \
-  -a match_url="https://www.oddsportal.com/football/england/premier-league/arsenal-fulham-vRiDNL8C/"
+## 🏗️ System Architecture
 
-# Step 2: Extract odds using metadata parameters
-scrapy crawl oddsportal_odds_spider -O odds_data.json \
-  -a match_url="https://www.oddsportal.com/football/england/premier-league/arsenal-fulham-vRiDNL8C/" \
-  -a match_id="vRiDNL8C" \
-  -a xhashf="%79%6a%63%34%63" \
-  -a sport_id="1" \
-  -a is_started="true"
+### Core Components
 
-# Save output to files
-scrapy crawl <spider_name> -O output.json -a param="value"
-
-# Debug with scrapy shell
-scrapy shell "https://example.com"
+```
+├── scrapers/           # Data collection layer (Scrapy)
+├── airflow/           # Orchestration layer (Apache Airflow)
+├── analytics/         # Strategy and analysis layer
+├── storage/           # Data persistence layer (S3 + Database)
+├── docker/            # Containerization
+└── config/            # System configuration
 ```
 
-### Docker & Airflow Operations
+### Technology Stack
+- **Data Collection**: Scrapy 2.11.2
+- **Orchestration**: Apache Airflow 2.10.5
+- **Storage**: S3 (primary) + PostgreSQL/MongoDB (metadata)
+- **Processing**: Apache Spark (future)
+- **Containerization**: Docker & Docker Compose
+- **Language**: Python 3.11+
+
+## 📐 Design Principles
+
+### 1. Separation of Concerns
+Each component has a single, well-defined responsibility:
+- Scrapers only scrape
+- Airflow only orchestrates
+- Analytics only analyzes
+- Storage only stores
+
+### 2. Fail Fast, Recover Gracefully
+- Validate data early in the pipeline
+- Log failures comprehensively
+- Implement automatic retries with exponential backoff
+- Never lose data - always persist raw data first
+
+### 3. Immutable Data Pipeline
+- Raw data is never modified, only transformed
+- Each transformation creates a new dataset
+- Maintain full audit trail from source to insight
+
+### 4. Schema Evolution
+- Design for change - betting markets evolve
+- Use versioned schemas
+- Backward compatibility for at least 2 versions
+
+## 🗂️ Project Structure
+
+```
+value-betting-platform/
+│
+├── CLAUDE.md                    # This file - project overview
+├── README.md                    # User-facing documentation
+├── docker-compose.yml           # Multi-container orchestration
+├── requirements.txt             # Python dependencies
+├── .env.example                # Environment template
+│
+├── scrapers/
+│   ├── CLAUDE.md               # Scraping architecture guide
+│   └── odds_scraper/
+│       ├── CLAUDE.md          # Spider implementation details
+│       └── ...
+│
+├── airflow/
+│   ├── CLAUDE.md              # DAG development guide
+│   ├── dags/                  # Airflow DAGs
+│   └── plugins/               # Custom operators
+│
+├── analytics/
+│   ├── CLAUDE.md              # Strategy framework guide
+│   ├── strategies/            # Betting strategies
+│   └── backtesting/           # Historical analysis
+│
+├── storage/
+│   ├── CLAUDE.md              # Storage patterns guide
+│   ├── schemas/               # Data schemas
+│   └── migrations/            # Schema migrations
+│
+├── config/
+│   ├── CLAUDE.md              # Configuration guide
+│   └── environments/          # Environment configs
+│
+└── docker/
+    ├── CLAUDE.md              # Container guide
+    └── Dockerfile             # Custom images
+```
+
+## 🚀 Development Workflow
+
+### Local Development Setup
+
 ```bash
-# Start Airflow stack
+# 1. Clone repository
+git clone <repository>
+cd value-betting-platform
+
+# 2. Create environment file
+cp .env.example .env
+# Edit .env with your configuration
+
+# 3. Start infrastructure
 docker-compose up -d
 
-# Access Airflow webserver
-# URL: http://localhost:8080 (airflow:airflow)
+# 4. Verify services
+docker-compose ps
+# Should see: postgres, redis, airflow-*, healthy
 
+# 5. Test a spider
+docker-compose exec airflow-worker \
+    scrapy crawl oddsportal_match_spider \
+    -a match_url="<test_url>"
+```
+
+### Development Commands
+
+```bash
 # View logs
-docker-compose logs airflow-webserver
-docker-compose logs airflow-scheduler
+docker-compose logs -f [service_name]
 
-# Stop services
+# Execute commands in container
+docker-compose exec airflow-worker bash
+
+# Run specific spider
+docker-compose exec airflow-worker \
+    scrapy crawl [spider_name] -a [args]
+
+# Trigger Airflow DAG
+docker-compose exec airflow-webserver \
+    airflow dags trigger [dag_id]
+
+# Stop all services
 docker-compose down
 ```
 
-## Architecture
+## 📊 Data Flow Principles
 
-### Spider Architecture
-The project uses two distinct spider architectures:
+### 1. Raw → Processed → Analyzed
+```
+Scraped Data (raw) → Normalized Data (processed) → Insights (analyzed)
+     ↓                      ↓                          ↓
+   S3/raw/               S3/processed/            S3/insights/
+```
 
-**FootyStats Spiders**: API-based spiders inheriting from `FootyStatsBaseSpider`
-- Automatic pagination handling
-- Built-in rate limiting and error handling
-- Request statistics tracking
-- Handles both list and single object API responses
+### 2. Idempotent Operations
+Every operation should produce the same result if run multiple times with the same input.
 
-**OddsPortal Spiders**: Web scraping with decoupled workflow
-- `BaseSpider`: Abstract template with parse → follow pattern
-- Match spider: Extracts metadata (match_id, xhashf, sport_id)
-- Odds spider: Uses metadata to fetch odds directly
+### 3. Time-Partitioned Storage
+Data is partitioned by collection time for efficient querying:
+```
+s3://bucket/raw/odds/year=2025/month=01/day=15/hour=14/
+```
 
-### Data Pipeline Flow
-1. **FootyStats**: API key → Base spider → Auto-pagination → Item yield
-2. **OddsPortal**: Match URL → Match metadata → Odds extraction → Item yield
-3. **Airflow**: Orchestrates spider execution and scheduling
-4. **Docker**: Containerized deployment with PostgreSQL + Redis
+## 🔧 Configuration Management
 
-### Key Configuration
-- `ROBOTSTXT_OBEY = False` in settings.py
-- Custom rate limiting per spider type
-- Async reactor for performance
-- UTF-8 feed encoding
+### Environment Variables
+All configuration through environment variables. No hardcoded values.
 
-## Spider Parameters
+```bash
+# Data Sources
+ODDSPORTAL_BASE_URL=https://www.oddsportal.com
 
-### FootyStats Required Parameters
-- `api_key`: API authentication key
-- Additional params vary by endpoint (country, league_id, team_id, etc.)
+# Storage
+S3_BUCKET=value-betting-data
+AWS_REGION=us-east-1
 
-### OddsPortal Required Parameters
-**Match Spider**: `match_url`
-**Odds Spider**: `match_url`, `match_id`, `xhashf`, `sport_id`
-**Optional**: `version_id`, `bet_types`, `scopes`, `is_started`
+# Database (future)
+DATABASE_URL=postgresql://user:pass@host:5432/db
 
-### Common Bet Types
-- `1`: 1X2 (Home/Draw/Away)
-- `2`: Over/Under
-- `5`: Asian Handicap
-- `8`: Correct Score
+# Orchestration
+AIRFLOW_PARALLELISM=10
+```
 
-### Common Scopes
-- `2`: Full Time
-- `3`: First Half
-- `4`: Second Half
+### Configuration Hierarchy
+1. Environment variables (highest priority)
+2. Configuration files
+3. Default values (lowest priority)
+
+## 🐛 Error Handling Philosophy
+
+### 1. Explicit Over Implicit
+```python
+# ❌ Bad - Silent failure
+try:
+    process_odds(data)
+except:
+    pass
+
+# ✅ Good - Explicit handling
+try:
+    process_odds(data)
+except OddsProcessingError as e:
+    logger.error(f"Failed to process odds: {e}", extra={"data": data})
+    raise
+```
+
+### 2. Log Everything
+- Every error with full context
+- Every retry attempt
+- Every data transformation
+- Every external API call
+
+### 3. Graceful Degradation
+If one bookmaker fails, continue with others. If one match fails, continue with remaining matches.
+
+## 📈 Performance Targets
+
+### Current Scale (Phase 1)
+- 100 concurrent matches
+- <30 second value calculation
+- 95% spider success rate
+- <5 minute data staleness for live matches
+
+### Future Scale (Phase 2+)
+- 1000+ concurrent matches
+- <10 second value calculation
+- 99% spider success rate
+- Real-time odds updates
+
+## 🔒 Security Principles
+
+### 1. Never Commit Secrets
+All secrets in environment variables or secret management systems.
+
+### 2. Principle of Least Privilege
+Each component only has access to what it needs.
+
+## 📝 Code Standards
+
+### Python Version
+Python 3.11+ for all components
+
+### Style Guide
+- Follow PEP 8
+- Line length: 100 characters
+- Use type hints
+- Google-style docstrings
+
+### File Size Limits
+- No file over 500 lines
+- No function over 50 lines
+- No class over 200 lines
+
+## 🧪 Testing Strategy
+
+### Test Levels
+1. **Unit Tests**: Individual functions/methods
+2. **Integration Tests**: Component interactions
+3. **End-to-End Tests**: Full pipeline validation
+
+### Test Location
+Tests live next to the code they test:
+```
+spider.py
+test_spider.py
+```
+
+## 📚 Documentation Standards
+
+### Documentation Hierarchy
+1. **CLAUDE.md files**: Technical implementation guides for AI assistance
+2. **README.md files**: User-facing documentation
+3. **Inline comments**: Complex logic explanation
+4. **Docstrings**: Function/class documentation
+
+### What to Document
+- **Why** over **what** - Code shows what, comments explain why
+- Architecture decisions
+- Non-obvious business logic
+- External dependencies
+- Configuration requirements
+
+## ⚠️ Important Notes
+
+### For Claude Code
+- **NEVER modify production data directly**
+- **Always test spiders with single URLs first**
+- **Keep backward compatibility when updating schemas**
+- **Log extensively but avoid logging sensitive data**
+- **Each directory's CLAUDE.md has specific details - always check it**
+
+### Current Development Status
+- ✅ Basic scraping infrastructure
+- ✅ Docker containerization
+- 🔄 Airflow DAG development
+- 📋 Storage layer implementation
+- 📋 Analytics framework
+- 📋 Strategy implementation
+
+### Priority Order
+1. Reliable data collection
+2. Consistent data storage
+3. Basic arbitrage detection
+4. Advanced strategies
+5. UI/Dashboard
+
+## 🔍 Directory-Specific Guides
+
+Each major directory has its own CLAUDE.md with specific details:
+
+- **scrapers/CLAUDE.md**: Scraping patterns, spider development
+- **airflow/CLAUDE.md**: DAG patterns, scheduling strategies
+- **analytics/CLAUDE.md**: Strategy implementation, backtesting
+- **storage/CLAUDE.md**: Data schemas, storage patterns
+- **docker/CLAUDE.md**: Container configuration, optimization
+
+Always consult the specific CLAUDE.md for the directory you're working in.
+
+---
+
+_This document provides high-level guidance. For implementation details, see directory-specific CLAUDE.md files._

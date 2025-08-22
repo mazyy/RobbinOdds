@@ -6,3 +6,4 @@ airflow/plugins/
 *.pyc
 *pycache*
 *.json
+*.html
